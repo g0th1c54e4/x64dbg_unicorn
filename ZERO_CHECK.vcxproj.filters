@@ -1,0 +1,13 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <CustomBuild Include="E:\Chrome Download\PluginTemplate-main\build\CMakeFiles\c888eb84f968c47d08f298ac3203648a\generate.stamp.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="CMake Rules">
+      <UniqueIdentifier>{05BC9505-E11D-3B71-8E02-D77EE41D4D20}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>

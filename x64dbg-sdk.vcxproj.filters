@@ -1,0 +1,130 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <CustomBuild Include="E:\Chrome Download\PluginTemplate-main\CMakeLists.txt" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="E:\Chrome Download\PluginTemplate-main\build\_deps\x64dbg-src\pluginsdk\DeviceNameResolver\DeviceNameResolver.h">
+      <Filter>pluginsdk\DeviceNameResolver</Filter>
+    </None>
+    <None Include="E:\Chrome Download\PluginTemplate-main\build\_deps\x64dbg-src\pluginsdk\TitanEngine\TitanEngine.h">
+      <Filter>pluginsdk\TitanEngine</Filter>
+    </None>
+    <None Include="E:\Chrome Download\PluginTemplate-main\build\_deps\x64dbg-src\pluginsdk\XEDParse\XEDParse.h">
+      <Filter>pluginsdk\XEDParse</Filter>
+    </None>
+    <None Include="E:\Chrome Download\PluginTemplate-main\build\_deps\x64dbg-src\pluginsdk\_dbgfunctions.h">
+      <Filter>pluginsdk</Filter>
+    </None>
+    <None Include="E:\Chrome Download\PluginTemplate-main\build\_deps\x64dbg-src\pluginsdk\_plugin_types.h">
+      <Filter>pluginsdk</Filter>
+    </None>
+    <None Include="E:\Chrome Download\PluginTemplate-main\build\_deps\x64dbg-src\pluginsdk\_plugins.h">
+      <Filter>pluginsdk</Filter>
+    </None>
+    <None Include="E:\Chrome Download\PluginTemplate-main\build\_deps\x64dbg-src\pluginsdk\_scriptapi.h">
+      <Filter>pluginsdk</Filter>
+    </None>
+    <None Include="E:\Chrome Download\PluginTemplate-main\build\_deps\x64dbg-src\pluginsdk\_scriptapi_argument.h">
+      <Filter>pluginsdk</Filter>
+    </None>
+    <None Include="E:\Chrome Download\PluginTemplate-main\build\_deps\x64dbg-src\pluginsdk\_scriptapi_assembler.h">
+      <Filter>pluginsdk</Filter>
+    </None>
+    <None Include="E:\Chrome Download\PluginTemplate-main\build\_deps\x64dbg-src\pluginsdk\_scriptapi_bookmark.h">
+      <Filter>pluginsdk</Filter>
+    </None>
+    <None Include="E:\Chrome Download\PluginTemplate-main\build\_deps\x64dbg-src\pluginsdk\_scriptapi_comment.h">
+      <Filter>pluginsdk</Filter>
+    </None>
+    <None Include="E:\Chrome Download\PluginTemplate-main\build\_deps\x64dbg-src\pluginsdk\_scriptapi_debug.h">
+      <Filter>pluginsdk</Filter>
+    </None>
+    <None Include="E:\Chrome Download\PluginTemplate-main\build\_deps\x64dbg-src\pluginsdk\_scriptapi_flag.h">
+      <Filter>pluginsdk</Filter>
+    </None>
+    <None Include="E:\Chrome Download\PluginTemplate-main\build\_deps\x64dbg-src\pluginsdk\_scriptapi_function.h">
+      <Filter>pluginsdk</Filter>
+    </None>
+    <None Include="E:\Chrome Download\PluginTemplate-main\build\_deps\x64dbg-src\pluginsdk\_scriptapi_gui.h">
+      <Filter>pluginsdk</Filter>
+    </None>
+    <None Include="E:\Chrome Download\PluginTemplate-main\build\_deps\x64dbg-src\pluginsdk\_scriptapi_label.h">
+      <Filter>pluginsdk</Filter>
+    </None>
+    <None Include="E:\Chrome Download\PluginTemplate-main\build\_deps\x64dbg-src\pluginsdk\_scriptapi_memory.h">
+      <Filter>pluginsdk</Filter>
+    </None>
+    <None Include="E:\Chrome Download\PluginTemplate-main\build\_deps\x64dbg-src\pluginsdk\_scriptapi_misc.h">
+      <Filter>pluginsdk</Filter>
+    </None>
+    <None Include="E:\Chrome Download\PluginTemplate-main\build\_deps\x64dbg-src\pluginsdk\_scriptapi_module.h">
+      <Filter>pluginsdk</Filter>
+    </None>
+    <None Include="E:\Chrome Download\PluginTemplate-main\build\_deps\x64dbg-src\pluginsdk\_scriptapi_pattern.h">
+      <Filter>pluginsdk</Filter>
+    </None>
+    <None Include="E:\Chrome Download\PluginTemplate-main\build\_deps\x64dbg-src\pluginsdk\_scriptapi_register.h">
+      <Filter>pluginsdk</Filter>
+    </None>
+    <None Include="E:\Chrome Download\PluginTemplate-main\build\_deps\x64dbg-src\pluginsdk\_scriptapi_stack.h">
+      <Filter>pluginsdk</Filter>
+    </None>
+    <None Include="E:\Chrome Download\PluginTemplate-main\build\_deps\x64dbg-src\pluginsdk\_scriptapi_symbol.h">
+      <Filter>pluginsdk</Filter>
+    </None>
+    <None Include="E:\Chrome Download\PluginTemplate-main\build\_deps\x64dbg-src\pluginsdk\bridgegraph.h">
+      <Filter>pluginsdk</Filter>
+    </None>
+    <None Include="E:\Chrome Download\PluginTemplate-main\build\_deps\x64dbg-src\pluginsdk\bridgelist.h">
+      <Filter>pluginsdk</Filter>
+    </None>
+    <None Include="E:\Chrome Download\PluginTemplate-main\build\_deps\x64dbg-src\pluginsdk\bridgemain.h">
+      <Filter>pluginsdk</Filter>
+    </None>
+    <None Include="E:\Chrome Download\PluginTemplate-main\build\_deps\x64dbg-src\pluginsdk\dbghelp\dbghelp.h">
+      <Filter>pluginsdk\dbghelp</Filter>
+    </None>
+    <None Include="E:\Chrome Download\PluginTemplate-main\build\_deps\x64dbg-src\pluginsdk\jansson\jansson.h">
+      <Filter>pluginsdk\jansson</Filter>
+    </None>
+    <None Include="E:\Chrome Download\PluginTemplate-main\build\_deps\x64dbg-src\pluginsdk\jansson\jansson_config.h">
+      <Filter>pluginsdk\jansson</Filter>
+    </None>
+    <None Include="E:\Chrome Download\PluginTemplate-main\build\_deps\x64dbg-src\pluginsdk\jansson\jansson_x64dbg.h">
+      <Filter>pluginsdk\jansson</Filter>
+    </None>
+    <None Include="E:\Chrome Download\PluginTemplate-main\build\_deps\x64dbg-src\pluginsdk\lz4\lz4.h">
+      <Filter>pluginsdk\lz4</Filter>
+    </None>
+    <None Include="E:\Chrome Download\PluginTemplate-main\build\_deps\x64dbg-src\pluginsdk\lz4\lz4file.h">
+      <Filter>pluginsdk\lz4</Filter>
+    </None>
+    <None Include="E:\Chrome Download\PluginTemplate-main\build\_deps\x64dbg-src\pluginsdk\lz4\lz4hc.h">
+      <Filter>pluginsdk\lz4</Filter>
+    </None>
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="pluginsdk">
+      <UniqueIdentifier>{F44D4E68-87D1-33D3-9485-B4243A13EE74}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="pluginsdk\DeviceNameResolver">
+      <UniqueIdentifier>{B293FD63-3FF0-3856-A185-D2A88A1AF09B}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="pluginsdk\TitanEngine">
+      <UniqueIdentifier>{32B802DA-12D7-3AD6-8754-429509163A03}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="pluginsdk\XEDParse">
+      <UniqueIdentifier>{016AFF3B-1E0D-3D7B-AC4E-076B0CF19055}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="pluginsdk\dbghelp">
+      <UniqueIdentifier>{FE702B3D-DBF3-3E44-A744-1B8A8C71358C}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="pluginsdk\jansson">
+      <UniqueIdentifier>{B1E69676-3429-37F0-AC4E-A029AAEFBDF5}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="pluginsdk\lz4">
+      <UniqueIdentifier>{559BA1C0-4B9C-3098-A319-FCCE21F23418}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>

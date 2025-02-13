@@ -1,0 +1,46 @@
+{
+	"sources" : 
+	[
+		{
+			"file" : "E:/Chrome Download/PluginTemplate-main/build/_deps/x64dbg-subbuild/CMakeFiles/x64dbg-populate"
+		},
+		{
+			"file" : "E:/Chrome Download/PluginTemplate-main/build/_deps/x64dbg-subbuild/CMakeFiles/c707568d2c1fc44f274cd67c76e769f7/x64dbg-populate.rule"
+		},
+		{
+			"file" : "E:/Chrome Download/PluginTemplate-main/build/_deps/x64dbg-subbuild/CMakeFiles/8b524a1cf6f80901911a1277da822c66/x64dbg-populate-complete.rule"
+		},
+		{
+			"file" : "E:/Chrome Download/PluginTemplate-main/build/_deps/x64dbg-subbuild/CMakeFiles/627977f5f986e6f93388d4af61249a08/x64dbg-populate-build.rule"
+		},
+		{
+			"file" : "E:/Chrome Download/PluginTemplate-main/build/_deps/x64dbg-subbuild/CMakeFiles/627977f5f986e6f93388d4af61249a08/x64dbg-populate-configure.rule"
+		},
+		{
+			"file" : "E:/Chrome Download/PluginTemplate-main/build/_deps/x64dbg-subbuild/CMakeFiles/627977f5f986e6f93388d4af61249a08/x64dbg-populate-download.rule"
+		},
+		{
+			"file" : "E:/Chrome Download/PluginTemplate-main/build/_deps/x64dbg-subbuild/CMakeFiles/627977f5f986e6f93388d4af61249a08/x64dbg-populate-install.rule"
+		},
+		{
+			"file" : "E:/Chrome Download/PluginTemplate-main/build/_deps/x64dbg-subbuild/CMakeFiles/627977f5f986e6f93388d4af61249a08/x64dbg-populate-mkdir.rule"
+		},
+		{
+			"file" : "E:/Chrome Download/PluginTemplate-main/build/_deps/x64dbg-subbuild/CMakeFiles/627977f5f986e6f93388d4af61249a08/x64dbg-populate-patch.rule"
+		},
+		{
+			"file" : "E:/Chrome Download/PluginTemplate-main/build/_deps/x64dbg-subbuild/CMakeFiles/627977f5f986e6f93388d4af61249a08/x64dbg-populate-test.rule"
+		},
+		{
+			"file" : "E:/Chrome Download/PluginTemplate-main/build/_deps/x64dbg-subbuild/CMakeFiles/627977f5f986e6f93388d4af61249a08/x64dbg-populate-update.rule"
+		}
+	],
+	"target" : 
+	{
+		"labels" : 
+		[
+			"x64dbg-populate"
+		],
+		"name" : "x64dbg-populate"
+	}
+}

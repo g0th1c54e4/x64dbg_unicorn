@@ -1,0 +1,12 @@
+# This is a generated file and its contents are an internal implementation detail.
+# The download step will be re-executed if anything in this file changes.
+# No other meaning or use of this file is supported.
+
+method=url
+command=C:/Program Files/CMake/bin/cmake.exe;-P;E:/Chrome Download/PluginTemplate-main/build/_deps/x64dbg-subbuild/x64dbg-populate-prefix/src/x64dbg-populate-stamp/download-x64dbg-populate.cmake;COMMAND;C:/Program Files/CMake/bin/cmake.exe;-P;E:/Chrome Download/PluginTemplate-main/build/_deps/x64dbg-subbuild/x64dbg-populate-prefix/src/x64dbg-populate-stamp/verify-x64dbg-populate.cmake;COMMAND;C:/Program Files/CMake/bin/cmake.exe;-P;E:/Chrome Download/PluginTemplate-main/build/_deps/x64dbg-subbuild/x64dbg-populate-prefix/src/x64dbg-populate-stamp/extract-x64dbg-populate.cmake
+source_dir=E:/Chrome Download/PluginTemplate-main/build/_deps/x64dbg-src
+work_dir=E:/Chrome Download/PluginTemplate-main/build/_deps
+url(s)=https://sourceforge.net/projects/x64dbg/files/snapshots/snapshot_2023-06-10_18-05.zip
+hash=SHA1=04468bd61fb36d6b10d17f342f03ef12f5b2ce62
+no_extract=
+

@@ -1,0 +1,4 @@
+E:/Chrome Download/PluginTemplate-main/build/CMakeFiles/x64dbg-sdk.dir
+E:/Chrome Download/PluginTemplate-main/build/CMakeFiles/PluginTemplate.dir
+E:/Chrome Download/PluginTemplate-main/build/CMakeFiles/ALL_BUILD.dir
+E:/Chrome Download/PluginTemplate-main/build/CMakeFiles/ZERO_CHECK.dir
