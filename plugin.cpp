@@ -60,7 +60,6 @@ void Unicorn_error_print_infomation(uc_engine* uc) {
 
     dprintf("-------------------------------------------\n");
 }
-
 uint64_t Align(uint64_t value, uint64_t align_value) {
     if (value / align_value * align_value == value) {
         return value;
@@ -85,24 +84,6 @@ void EmuHookCode(uc_engine* uc, duint addr, size_t size, void* userdata){
     cs_disasm(hCs, codebuf, size, addr, 0, &ins);
     dprintf("executing instruction at 0x%llX, size: %llu   comd: %s\t%s\n", addr, size, ins->mnemonic, ins->op_str);
     delete[] codebuf;
-    
-    //Script::Debug::SetBreakpoint(addr);
-    //Script::Debug::Run();
-    //Script::Debug::Wait();
-    //Script::Debug::DeleteBreakpoint(addr);
-
-    //auto get_reg = [&](uc_x86_reg ucreg) -> uint64_t {
-    //    uint64_t val = 0;
-    //    if (uc_reg_read(uc, ucreg, &val) != CS_ERR_OK) {
-    //        dprintf("get_reg() failed.\n");
-    //    }
-    //    return val;
-    //};
-
-    //if (get_reg(UC_X86_REG_RSP) != Script::Register::GetRSP()) {
-    //    Unicorn_error_print_infomation(uc);
-    //    int a = 5;
-    //}
 
     return;
 }
@@ -177,9 +158,36 @@ void EmuHookMem(uc_engine* uc, uc_mem_type type, duint address, int size, int64_
     return;
 }
 
-// Command use the same signature as main in C
-// argv[0] contains the full command, after that are the arguments
-// NOTE: arguments are separated by a COMMA (not space like WinDbg)
+static bool EnumAllMemoryBlocks(HANDLE hProcess, std::vector<MEMORY_BASIC_INFORMATION>& memories) {
+
+    memories.clear();
+    memories.reserve(200);
+
+    SYSTEM_INFO sysInfo = { 0 };
+    GetSystemInfo(&sysInfo);
+
+    const char* p = (const char*)sysInfo.lpMinimumApplicationAddress;
+    MEMORY_BASIC_INFORMATION  memInfo = { 0 };
+    while (p < sysInfo.lpMaximumApplicationAddress) {
+        size_t size = VirtualQueryEx(
+            hProcess,								// 进程句柄
+            p,										// 要查询内存块的基地址指针
+            &memInfo,								// 接收内存块信息的 MEMORY_BASIC_INFORMATION 对象
+            sizeof(MEMORY_BASIC_INFORMATION32)		// 缓冲区大小
+        );
+        if (size == 0) {
+            dprintf("VirtualQueryEx() failed. err: %d\n", GetLastError());
+        }
+        if (size != sizeof(MEMORY_BASIC_INFORMATION32)) { 
+            break;
+        }
+        memories.push_back(memInfo);
+        p += memInfo.RegionSize;
+    }
+
+    return memories.size() > 0;
+}
+
 static bool cbExampleCommand(int argc, char** argv) {
 
     auto parseExpr = [](const char* expression, duint& value){
@@ -190,123 +198,41 @@ static bool cbExampleCommand(int argc, char** argv) {
         }
         return success;
     };
+    
     if (strcmp(argv[1], "print") == 0) {
-        dprintf("ProcessID: 0x%x\n", DbgValFromString("$pid")); // 被调试的可执行文件的进程ID
-        dprintf("hProcess: 0x%x\n", DbgValFromString("$hp")); // 调试的可执行文件句柄
-        dprintf("\n");
 
-        char modname[MAX_PATH] = { 0 };
-        char path[MAX_PATH] = { 0 };
-        Script::Module::GetMainModuleName(modname);
-        Script::Module::GetMainModulePath(path);
-        
-        dprintf("name: %s\n", modname);
-        dprintf("base: %llx\n", Script::Module::GetMainModuleBase());
-        dprintf("entry: %llx\n", Script::Module::GetMainModuleEntry());
-        dprintf("path: %s\n", path);
-        dprintf("size: %llx\n", Script::Module::GetMainModuleSize());
+        dprintf("ProcessID: 0x%X\n", DbgGetProcessId()); // 被调试的可执行文件的进程ID
+        dprintf("hProcess: 0x%X\n", (duint)DbgGetProcessHandle()); // 调试的可执行文件句柄
 
-        ListInfo modSecs;
-        Script::Module::GetMainModuleSectionList(&modSecs);
-        Script::Module::ModuleSectionInfo* sectionInfo(static_cast<Script::Module::ModuleSectionInfo*>(modSecs.data));
-        for (int i = 0; i < modSecs.count; i++){
-            dprintf("section name [%d]: %s\n", i, sectionInfo[i].name);
-            dprintf("section addr [%d]: %llx\n", i, sectionInfo[i].addr);
-            dprintf("section size [%d]: %llx\n", i, sectionInfo[i].size);
-            dprintf("\n");
-        }
-        BridgeFree(sectionInfo);
+        dprintf("Stack Begin: %llX\n", get_stack_begin());
+        dprintf("Stack End: %llX\n", get_stack_end());
 
-        Script::Module::ModuleInfo mainMod;
-        Script::Module::GetMainModuleInfo(&mainMod);
+        MEMMAP map{};
+        DbgMemMap(&map);
+        for (int i = 0; i < map.count; i++){
+            map.page[i];
+            dprintf("AllocationBase: %p\n", map.page[i].mbi.AllocationBase);
+            dprintf("AllocationProtect: %lu\n", map.page[i].mbi.AllocationProtect);
+            dprintf("BaseAddress: %p\n", map.page[i].mbi.BaseAddress); //
+            dprintf("RegionSize: %llX\n", map.page[i].mbi.RegionSize); //
+            //dprintf("State: %lX\n", map.page[i].mbi.State);
 
-        ListInfo modExports;
-        ListInfo modImports;
-        Script::Module::GetExports(&mainMod, &modExports);
-        Script::Module::GetImports(&mainMod, &modImports);
-        Script::Module::ModuleExport* ExportInfo(static_cast<Script::Module::ModuleExport*>(modExports.data));
-        Script::Module::ModuleImport* ImportInfo(static_cast<Script::Module::ModuleImport*>(modImports.data));
-        for (int i = 0; i < modExports.count; i++) {
-            dprintf("export name [%d]: %s\n", i, ExportInfo[i].name);
-            dprintf("export rva [%d]: %llx\n", i, ExportInfo[i].rva);
-            dprintf("export va [%d]: %llx\n", i, ExportInfo[i].va);
-            dprintf("export forwarded [%d]: %d\n", i, ExportInfo[i].forwarded);
-            dprintf("export forwardName [%d]: %s\n", i, ExportInfo[i].forwardName);
-            dprintf("export ordinal [%d]: %llx\n", i, ExportInfo[i].ordinal);
-            dprintf("\n");
-        }
-        for (int i = 0; i < modImports.count; i++) {
-            dprintf("import name [%d]: %s\n", i, ImportInfo[i].name);
-            dprintf("import ordinal [%d]: %llx\n", i, ImportInfo[i].ordinal);
-            dprintf("import rva [%d]: %llx\n", i, ImportInfo[i].iatRva);
-            dprintf("import va [%d]: %llx\n", i, ImportInfo[i].iatVa);
-            dprintf("\n");
-        }
-        BridgeFree(ExportInfo);
-        BridgeFree(ImportInfo);
+            switch (map.page[i].mbi.Type){
+            default: break;
+            case MEM_IMAGE:
+                dprintf("Type: IMG\n"); break;
+            case MEM_MAPPED:
+                dprintf("Type: MAP\n"); break;
+            case MEM_PRIVATE:
+                dprintf("Type: PRV\n"); break;
+            }
 
-        ListInfo mods;
-        Script::Module::GetList(&mods);
-        Script::Module::ModuleInfo* modInfo(static_cast<Script::Module::ModuleInfo*>(mods.data));
-        for (int i = 0; i < mods.count; i++) {
-            dprintf("module name [%d]: %s\n", i, modInfo[i].name);
-            dprintf("module base [%d]: %llx\n", i, modInfo[i].base);
-            dprintf("module entry [%d]: %llx\n", i, modInfo[i].entry);
-            dprintf("module path [%d]: %s\n", i, modInfo[i].path);
-            dprintf("module sectionCount [%d]: %d\n", i, modInfo[i].sectionCount);
-            dprintf("module size [%d]: %llx\n", i, modInfo[i].size);
-            dprintf("\n");
-        }
-        BridgeFree(modInfo);
-    }
-    if (strcmp(argv[1], "print2") == 0) {
-        REGDUMP regs;
-        if (!DbgGetRegDumpEx(&regs, sizeof(REGDUMP))) {
-            return false;
+            
+            dprintf("Protect: %lX\n", map.page[i].mbi.Protect); //
+            
+            dprintf("--------------------------\n");
         }
 
-        dprintf("rax: %llx\n", Script::Register::Get(Script::Register::RAX));
-        dprintf("rbx: %llx\n", Script::Register::Get(Script::Register::RBX));
-        dprintf("rcx: %llx\n", Script::Register::Get(Script::Register::RCX));
-        dprintf("rdx: %llx\n", Script::Register::Get(Script::Register::RDX));
-        dprintf("rsi: %llx\n", Script::Register::Get(Script::Register::RSI));
-        dprintf("rdi: %llx\n", Script::Register::Get(Script::Register::RDI));
-        dprintf("rsp: %llx\n", Script::Register::Get(Script::Register::RSP));
-        dprintf("rbp: %llx\n", Script::Register::Get(Script::Register::RBP));
-        dprintf("rip: %llx\n", Script::Register::Get(Script::Register::RIP));
-        dprintf("r8: %llx\n", Script::Register::Get(Script::Register::R8));
-        dprintf("r9: %llx\n", Script::Register::Get(Script::Register::R9));
-        dprintf("r10: %llx\n", Script::Register::Get(Script::Register::R10));
-        dprintf("r11: %llx\n", Script::Register::Get(Script::Register::R11));
-        dprintf("r12: %llx\n", Script::Register::Get(Script::Register::R12));
-        dprintf("r13: %llx\n", Script::Register::Get(Script::Register::R13));
-        dprintf("r14: %llx\n", Script::Register::Get(Script::Register::R14));
-        dprintf("r15: %llx\n", Script::Register::Get(Script::Register::R15));
-
-        dprintf("dr0: %llx\n", Script::Register::Get(Script::Register::DR0));
-        dprintf("dr1: %llx\n", Script::Register::Get(Script::Register::DR1));
-        dprintf("dr2: %llx\n", Script::Register::Get(Script::Register::DR2));
-        dprintf("dr3: %llx\n", Script::Register::Get(Script::Register::DR3));
-        dprintf("dr6: %llx\n", Script::Register::Get(Script::Register::DR6));
-        dprintf("dr7: %llx\n", Script::Register::Get(Script::Register::DR7));
-
-        dprintf("eflags: %llx\n", regs.regcontext.eflags);
-        dprintf("zf: %d\n", Script::Flag::Get(Script::Flag::ZF));
-        dprintf("of: %d\n", Script::Flag::Get(Script::Flag::OF));
-        dprintf("cf: %d\n", Script::Flag::Get(Script::Flag::CF));
-        dprintf("pf: %d\n", Script::Flag::Get(Script::Flag::PF));
-        dprintf("sf: %d\n", Script::Flag::Get(Script::Flag::SF));
-        dprintf("tf: %d\n", Script::Flag::Get(Script::Flag::TF));
-        dprintf("af: %d\n", Script::Flag::Get(Script::Flag::AF));
-        dprintf("df: %d\n", Script::Flag::Get(Script::Flag::DF));
-        dprintf("if: %d\n", Script::Flag::Get(Script::Flag::IF));
-        
-        dprintf("cs: %x\n", regs.regcontext.cs);
-        dprintf("ds: %x\n", regs.regcontext.ds);
-        dprintf("fs: %x\n", regs.regcontext.fs);
-        dprintf("ss: %x\n", regs.regcontext.ss);
-        dprintf("gs: %x\n", regs.regcontext.gs);
-        dprintf("es: %x\n", regs.regcontext.es);
     }
 
     return true;
@@ -342,16 +268,53 @@ static bool cbExampleCommand_unicorn(int argc, char** argv) {
         return false;
     }
 
+    { // 对诸如"堆"的内存区域进行初始化
+        MEMMAP map{};
+        DbgMemMap(&map);
+        for (int i = 0; i < map.count; i++) {
+            if (map.page[i].mbi.Type == MEM_IMAGE) { // 是exe或dll
+                continue;
+            }
+            if (map.page[i].mbi.Protect == 0 || map.page[i].mbi.Protect == PAGE_NOACCESS) { // 没权限
+                continue;
+            }
+            if (map.page[i].mbi.RegionSize > 0x000000007FFFFFFF) { // 太大了
+                continue;
+            }
+            uint64_t mem_addr = (uint64_t)map.page[i].mbi.BaseAddress;
+            uint64_t mem_size = (uint64_t)map.page[i].mbi.RegionSize;
+            if ((err = uc_mem_map(uc, mem_addr, mem_size, UC_PROT_ALL)) != UC_ERR_OK) {
+                dprintf("uc_mem_map() failed!!! err:%d\n", err);
+                return false;
+            }
+            uint8_t* buf = new uint8_t[mem_size]();
+            duint readsize = 0;
+            if ((!Script::Memory::Read(mem_addr, buf, mem_size, &readsize)) || (readsize != mem_size)) {
+                dprintf("Script::Memory::Read() failed!!!\n");
+                delete[] buf;
+                return false;
+            }
+            if (uc_mem_write(uc, mem_addr, buf, mem_size) != UC_ERR_OK) {
+                dprintf("uc_mem_write() failed!!!\n");
+                delete[] buf;
+                return false;
+            }
+            delete[] buf;
+        }
+    }
+
     {
         uint8_t* buf = new uint8_t[modSize]();
         duint readsize = 0;
         if ((!Script::Memory::Read(modBase, buf, modSize, &readsize)) || (readsize != modSize)) {
             dprintf("Script::Memory::Read() failed!!!\n");
+            delete[] buf;
             return false;
         }
 
         if (uc_mem_write(uc, modBase, buf, modSize) != UC_ERR_OK) {
             dprintf("uc_mem_write() failed!!!\n");
+            delete[] buf;
             return false;
         }
         delete[] buf;
@@ -383,7 +346,7 @@ static bool cbExampleCommand_unicorn(int argc, char** argv) {
         if ((err = uc_reg_write(uc, ucreg, &reg_value)) != UC_ERR_OK) {
             dprintf("uc_reg_write() failed!!! ucreg:%d | err:%d\n", ucreg, err);
         }
-        };
+    };
 
     REGDUMP regs;
     if (!DbgGetRegDumpEx(&regs, sizeof(REGDUMP))) {
@@ -433,11 +396,6 @@ static bool cbExampleCommand_unicorn(int argc, char** argv) {
     uint64_t rip = Script::Register::GetRIP();
     uint64_t stack_size = stack_end - stack_begin;
     uint64_t stack_size_align = Align(stack_size, 0x1000);
-
-    if ((err = uc_mem_map(uc, stack_begin, stack_size_align, UC_PROT_READ | UC_PROT_WRITE)) != UC_ERR_OK) {
-        dprintf("uc_mem_map() failed!!! err:%d\n", err);
-        return false;
-    }
 
     uint8_t* buf = new uint8_t[stack_size_align]();
     duint readsize = 0;
@@ -490,11 +448,10 @@ static bool cbExampleCommand_unicorn(int argc, char** argv) {
     return true;
 }
 
-// Initialize your plugin data here.
 bool pluginInit(PLUG_INITSTRUCT* initStruct){
     dprintf("pluginInit(pluginHandle: %d)\n", pluginHandle);
 
-    // Prefix of the functions to call here: _plugin_register
+    cs_open(CS_ARCH_X86, CS_MODE_64, &hCs);
     _plugin_registercommand(pluginHandle, "xzc", cbExampleCommand, true);
     _plugin_registercommand(pluginHandle, "unicorn", cbExampleCommand_unicorn, true);
 
@@ -507,7 +464,6 @@ bool pluginInit(PLUG_INITSTRUCT* initStruct){
 // This function is not executed on the GUI thread, so you might need
 // to use WaitForSingleObject or similar to wait for everything to close.
 void pluginStop(){
-    // Prefix of the functions to call here: _plugin_unregister
     cs_close(&hCs);
 }
 
@@ -515,22 +471,32 @@ void pluginStop(){
 // This code runs on the GUI thread: GetCurrentThreadId() == GuiGetMainThreadId()
 // You can get the HWND using GuiGetWindowHandle()
 void pluginSetup(){
-    // Prefix of the functions to call here: _plugin_menu
-    cs_open(CS_ARCH_X86, CS_MODE_64, &hCs);
+    
 }
 
-uint64_t get_stack_begin() {    // 不断减减减
+uint64_t get_stack_begin() {
     uint64_t rsp = Script::Register::GetRSP();
-    while (Script::Memory::IsValidPtr(rsp)) {
-        rsp -= 8;
+    MEMMAP map{};
+    DbgMemMap(&map);
+    for (int i = 0; i < map.count; i++) {
+        if ((uint64_t)map.page[i].mbi.BaseAddress <= rsp &&
+            ((uint64_t)map.page[i].mbi.BaseAddress + map.page[i].mbi.RegionSize) >= rsp) {
+            return (uint64_t)map.page[i].mbi.BaseAddress;
+        }
     }
-    return rsp + 8;
+    dprintf("get_stack_begin() returnd 0, failed!");
+    return 0;
 }
-
-uint64_t get_stack_end() {     // 不断加加加
+uint64_t get_stack_end() {
     uint64_t rsp = Script::Register::GetRSP();
-    while (Script::Memory::IsValidPtr(rsp)) {
-        rsp += 8;
+    MEMMAP map{};
+    DbgMemMap(&map);
+    for (int i = 0; i < map.count; i++) {
+        if ((uint64_t)map.page[i].mbi.BaseAddress <= rsp &&
+            ((uint64_t)map.page[i].mbi.BaseAddress + map.page[i].mbi.RegionSize) >= rsp) {
+            return (uint64_t)map.page[i].mbi.BaseAddress + map.page[i].mbi.RegionSize - 8;
+        }
     }
-    return rsp - 8;
+    dprintf("get_stack_end() returnd 0, failed!");
+    return 0;
 }
