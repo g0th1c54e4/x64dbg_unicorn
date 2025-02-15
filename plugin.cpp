@@ -1,12 +1,18 @@
 #include "plugin.h"
 
+
 uint64_t get_stack_begin();
 uint64_t get_stack_end();
 
 uc_hook hookcode;
 uc_hook hookMemInvalid;
 uc_hook hookMem;
+uc_hook hookIntr;
 csh hCs = 0;
+
+enum {
+    MENU_QUICK_EMU,
+};
 
 void Unicorn_error_print_infomation(uc_engine* uc) {
     dprintf("-------------------------------------------\n");
@@ -74,6 +80,13 @@ typedef struct _MAPPER{
 }MAPPER, * PMAPPER;
 std::vector<MAPPER> gMappedMemoryInfo;
 
+void EmuHookIntr(uc_engine* uc, uint32_t intno, void* user_data) {
+    duint curRip;
+    uc_reg_read(uc, UC_X86_REG_RIP, &curRip);
+
+    dprintf("meet Intr Instruction! rip: %llX\n", curRip);
+}
+
 void EmuHookCode(uc_engine* uc, duint addr, size_t size, void* userdata){
     duint curRip;
     uc_reg_read(uc, UC_X86_REG_RIP, &curRip);
@@ -90,55 +103,19 @@ void EmuHookCode(uc_engine* uc, duint addr, size_t size, void* userdata){
 
 // return false to stop emulation
 bool EmuHookMemInvalid(uc_engine* uc, uc_mem_type type, duint address, int size, int64_t value, void* userdata){
-    MAPPER lMemMap;
-    unsigned char mem[PAGE_SIZE];
-    uc_err err;
-
-    duint modbase = Script::Module::GetMainModuleBase();
-    duint modsize = Script::Module::GetMainModuleSize();
-    if (!(address > modbase && address < (modbase + modsize))) {
-        dprintf("Outer memory access: %llu\n", address);
-    }
-
     duint curRip;
     uc_reg_read(uc, UC_X86_REG_RIP, &curRip);
-
-    switch (type){
+    switch (type) {
     default:
         return false;
     case UC_MEM_WRITE_UNMAPPED:
-        dprintf("Unmapped Memory write reached | address: %llX   rip: %llX\n", address, curRip);
+        dprintf("Unmapped Memory WRITE reached | address: %llX   rip: %llX\n", address, curRip);
         return false;
     case UC_MEM_READ_UNMAPPED:
-        dprintf("Unmapped memory read reached | address: %llX   rip: %llX\n", address, curRip);
-        // Lets map the memory
-        //TODO: Goes in a callback that ensures we're not mapping overlapped memory
-        if (DbgMemIsValidReadPtr(address)){
-            //Address is accessible. Map one page size at a time and save it
-            if (DbgMemRead(address, mem, PAGE_SIZE)){
-                // map the memory
-                err = uc_mem_map(uc, address, PAGE_SIZE, UC_PROT_ALL);
-                if (err != UC_ERR_OK){
-                    dprintf("Something went wrong mapping the memory\n");
-                    return false;
-                }
-                err = uc_mem_write(uc, address, mem, PAGE_SIZE);
-                if (err != UC_ERR_OK){
-                    dprintf("Error writing to the mapped memory\n");
-                    return false;
-                }
-                //store info
-                lMemMap.addr = address;
-                lMemMap.len = PAGE_SIZE;
-                lMemMap.mapped = true;
-                gMappedMemoryInfo.push_back(lMemMap);
-            }
-            return true;
-        }
-        dprintf("Invalid Memory read\n");
+        dprintf("Unmapped memory READ reached | address: %llX   rip: %llX\n", address, curRip);
         return false;
     case UC_MEM_FETCH_UNMAPPED:
-        dprintf("Unmapped fetched memory reached\n");
+        dprintf("Unmapped memory FETCH reached | address: %llX   rip: %llX\n", address, curRip);
         return false;
     }
     return true;
@@ -156,36 +133,6 @@ void EmuHookMem(uc_engine* uc, uc_mem_type type, duint address, int size, int64_
         break;
     }
     return;
-}
-
-static bool EnumAllMemoryBlocks(HANDLE hProcess, std::vector<MEMORY_BASIC_INFORMATION>& memories) {
-
-    memories.clear();
-    memories.reserve(200);
-
-    SYSTEM_INFO sysInfo = { 0 };
-    GetSystemInfo(&sysInfo);
-
-    const char* p = (const char*)sysInfo.lpMinimumApplicationAddress;
-    MEMORY_BASIC_INFORMATION  memInfo = { 0 };
-    while (p < sysInfo.lpMaximumApplicationAddress) {
-        size_t size = VirtualQueryEx(
-            hProcess,								// 进程句柄
-            p,										// 要查询内存块的基地址指针
-            &memInfo,								// 接收内存块信息的 MEMORY_BASIC_INFORMATION 对象
-            sizeof(MEMORY_BASIC_INFORMATION32)		// 缓冲区大小
-        );
-        if (size == 0) {
-            dprintf("VirtualQueryEx() failed. err: %d\n", GetLastError());
-        }
-        if (size != sizeof(MEMORY_BASIC_INFORMATION32)) { 
-            break;
-        }
-        memories.push_back(memInfo);
-        p += memInfo.RegionSize;
-    }
-
-    return memories.size() > 0;
 }
 
 static bool cbExampleCommand(int argc, char** argv) {
@@ -207,52 +154,42 @@ static bool cbExampleCommand(int argc, char** argv) {
         dprintf("Stack Begin: %llX\n", get_stack_begin());
         dprintf("Stack End: %llX\n", get_stack_end());
 
-        MEMMAP map{};
-        DbgMemMap(&map);
-        for (int i = 0; i < map.count; i++){
-            map.page[i];
-            dprintf("AllocationBase: %p\n", map.page[i].mbi.AllocationBase);
-            dprintf("AllocationProtect: %lu\n", map.page[i].mbi.AllocationProtect);
-            dprintf("BaseAddress: %p\n", map.page[i].mbi.BaseAddress); //
-            dprintf("RegionSize: %llX\n", map.page[i].mbi.RegionSize); //
-            //dprintf("State: %lX\n", map.page[i].mbi.State);
+        dprintf("Peb: %llX\n", DbgGetPebAddress(DbgGetProcessId()));
+        dprintf("Teb: %llX\n", DbgGetTebAddress(DbgGetThreadId()));
+        dprintf("GS Base: %llX\n", DbgGetTebAddress(DbgGetThreadId())); // gs_base
 
-            switch (map.page[i].mbi.Type){
-            default: break;
-            case MEM_IMAGE:
-                dprintf("Type: IMG\n"); break;
-            case MEM_MAPPED:
-                dprintf("Type: MAP\n"); break;
-            case MEM_PRIVATE:
-                dprintf("Type: PRV\n"); break;
-            }
+        //MEMMAP map{};
+        //DbgMemMap(&map);
+        //uint64_t totalSize = 0;
+        //for (int i = 0; i < map.count; i++){
+        //    map.page[i];
+        //    dprintf("AllocationBase: %p\n", map.page[i].mbi.AllocationBase);
+        //    dprintf("AllocationProtect: %lu\n", map.page[i].mbi.AllocationProtect);
+        //    dprintf("BaseAddress: %p\n", map.page[i].mbi.BaseAddress); //
+        //    dprintf("RegionSize: %llX\n", map.page[i].mbi.RegionSize); //
+        //    //dprintf("State: %lX\n", map.page[i].mbi.State);
 
-            
-            dprintf("Protect: %lX\n", map.page[i].mbi.Protect); //
-            
-            dprintf("--------------------------\n");
-        }
-
+        //    switch (map.page[i].mbi.Type){
+        //    default: break;
+        //    case MEM_IMAGE:
+        //        dprintf("Type: IMG\n"); break;
+        //    case MEM_MAPPED:
+        //        dprintf("Type: MAP\n"); break;
+        //    case MEM_PRIVATE:
+        //        dprintf("Type: PRV\n"); break;
+        //    }
+        //    
+        //    dprintf("Protect: %lX\n", map.page[i].mbi.Protect); //
+        //    
+        //    dprintf("--------------------------\n");
+        //    totalSize += map.page[i].mbi.RegionSize;
+        //}
+        //dprintf("Memory Map Total Size: 0x%llX\n", totalSize);
     }
 
     return true;
 }
-static bool cbExampleCommand_unicorn(int argc, char** argv) {
-
-    if (argc < 2) {
-        dprintf("Usage: unicorn [final_addr]\n");
-        return false;
-    }
-
-    auto parseExpr = [](const char* expression, duint& value) {
-        bool success = false;
-        value = DbgEval(expression, &success);
-        if (!success) {
-            dprintf("Invalid expression '%s'\n", expression);
-        }
-        return success;
-    };
-
+bool unicorn_main_emu(uint64_t final_addr) {
     uc_engine* uc;
     uc_err err;
     err = uc_open(UC_ARCH_X86, UC_MODE_64, &uc);
@@ -263,24 +200,22 @@ static bool cbExampleCommand_unicorn(int argc, char** argv) {
     }
     duint modBase = Script::Module::GetMainModuleBase();
     duint modSize = Script::Module::GetMainModuleSize();
-    if (uc_mem_map(uc, modBase, modSize, UC_PROT_ALL) != UC_ERR_OK) {
-        dprintf("uc_mem_map() failed!!!\n");
-        return false;
-    }
+    //if (uc_mem_map(uc, modBase, modSize, UC_PROT_ALL) != UC_ERR_OK) { // 对主模块进行映射
+    //    dprintf("uc_mem_map() failed!!!\n");
+    //    return false;
+    //}
 
     { // 对诸如"堆"的内存区域进行初始化
         MEMMAP map{};
         DbgMemMap(&map);
         for (int i = 0; i < map.count; i++) {
-            if (map.page[i].mbi.Type == MEM_IMAGE) { // 是exe或dll
+            //if (map.page[i].mbi.Type == MEM_IMAGE) { // 是exe或dll
+            //    continue;
+            //}
+            if (map.page[i].mbi.Protect == 0 || map.page[i].mbi.Protect == PAGE_NOACCESS || !DbgMemIsValidReadPtr((duint)map.page[i].mbi.BaseAddress)) { // 没权限
                 continue;
             }
-            if (map.page[i].mbi.Protect == 0 || map.page[i].mbi.Protect == PAGE_NOACCESS) { // 没权限
-                continue;
-            }
-            if (map.page[i].mbi.RegionSize > 0x000000007FFFFFFF) { // 太大了
-                continue;
-            }
+
             uint64_t mem_addr = (uint64_t)map.page[i].mbi.BaseAddress;
             uint64_t mem_size = (uint64_t)map.page[i].mbi.RegionSize;
             if ((err = uc_mem_map(uc, mem_addr, mem_size, UC_PROT_ALL)) != UC_ERR_OK) {
@@ -320,7 +255,6 @@ static bool cbExampleCommand_unicorn(int argc, char** argv) {
         delete[] buf;
     }
 
-
     ListInfo modSecs;
     Script::Module::GetMainModuleSectionList(&modSecs);
     Script::Module::ModuleSectionInfo* sectionInfo(static_cast<Script::Module::ModuleSectionInfo*>(modSecs.data));
@@ -328,25 +262,28 @@ static bool cbExampleCommand_unicorn(int argc, char** argv) {
 
         uint8_t* buf = new uint8_t[sectionInfo[i].size]();
         duint readsize = 0;
+
         if ((!Script::Memory::Read(sectionInfo[i].addr, buf, sectionInfo[i].size, &readsize)) || (readsize != sectionInfo[i].size)) {
             dprintf("Script::Memory::Read() failed!!!\n");
+            delete[] buf;
             return false;
         }
 
         if (uc_mem_write(uc, sectionInfo[i].addr, buf, sectionInfo[i].size) != UC_ERR_OK) {
             dprintf("uc_mem_write() failed!!!\n");
+            delete[] buf;
             return false;
         }
         delete[] buf;
     }
     BridgeFree(sectionInfo);
 
-    auto write_uc_reg = [&](uc_x86_reg ucreg, Script::Register::RegisterEnum dbgreg) {
+    auto write_uc_reg_withdbg = [&](uc_x86_reg ucreg, Script::Register::RegisterEnum dbgreg) {
         duint reg_value = Script::Register::Get(dbgreg);
         if ((err = uc_reg_write(uc, ucreg, &reg_value)) != UC_ERR_OK) {
             dprintf("uc_reg_write() failed!!! ucreg:%d | err:%d\n", ucreg, err);
         }
-    };
+        };
 
     REGDUMP regs;
     if (!DbgGetRegDumpEx(&regs, sizeof(REGDUMP))) {
@@ -354,37 +291,39 @@ static bool cbExampleCommand_unicorn(int argc, char** argv) {
         return false;
     }
 
-    write_uc_reg(UC_X86_REG_RAX, Script::Register::RAX);
-    write_uc_reg(UC_X86_REG_RBX, Script::Register::RBX);
-    write_uc_reg(UC_X86_REG_RCX, Script::Register::RCX);
-    write_uc_reg(UC_X86_REG_RDX, Script::Register::RDX);
-    write_uc_reg(UC_X86_REG_RSP, Script::Register::RSP);
-    write_uc_reg(UC_X86_REG_RBP, Script::Register::RBP);
-    write_uc_reg(UC_X86_REG_RSI, Script::Register::RSI);
-    write_uc_reg(UC_X86_REG_RDI, Script::Register::RDI);
-    write_uc_reg(UC_X86_REG_RIP, Script::Register::RIP);
-    write_uc_reg(UC_X86_REG_R8, Script::Register::R8);
-    write_uc_reg(UC_X86_REG_R9, Script::Register::R9);
-    write_uc_reg(UC_X86_REG_R10, Script::Register::R10);
-    write_uc_reg(UC_X86_REG_R11, Script::Register::R11);
-    write_uc_reg(UC_X86_REG_R12, Script::Register::R12);
-    write_uc_reg(UC_X86_REG_R13, Script::Register::R13);
-    write_uc_reg(UC_X86_REG_R14, Script::Register::R14);
-    write_uc_reg(UC_X86_REG_R15, Script::Register::R15);
+    write_uc_reg_withdbg(UC_X86_REG_RAX, Script::Register::RAX);
+    write_uc_reg_withdbg(UC_X86_REG_RBX, Script::Register::RBX);
+    write_uc_reg_withdbg(UC_X86_REG_RCX, Script::Register::RCX);
+    write_uc_reg_withdbg(UC_X86_REG_RDX, Script::Register::RDX);
+    write_uc_reg_withdbg(UC_X86_REG_RSP, Script::Register::RSP);
+    write_uc_reg_withdbg(UC_X86_REG_RBP, Script::Register::RBP);
+    write_uc_reg_withdbg(UC_X86_REG_RSI, Script::Register::RSI);
+    write_uc_reg_withdbg(UC_X86_REG_RDI, Script::Register::RDI);
+    write_uc_reg_withdbg(UC_X86_REG_RIP, Script::Register::RIP);
+    write_uc_reg_withdbg(UC_X86_REG_R8, Script::Register::R8);
+    write_uc_reg_withdbg(UC_X86_REG_R9, Script::Register::R9);
+    write_uc_reg_withdbg(UC_X86_REG_R10, Script::Register::R10);
+    write_uc_reg_withdbg(UC_X86_REG_R11, Script::Register::R11);
+    write_uc_reg_withdbg(UC_X86_REG_R12, Script::Register::R12);
+    write_uc_reg_withdbg(UC_X86_REG_R13, Script::Register::R13);
+    write_uc_reg_withdbg(UC_X86_REG_R14, Script::Register::R14);
+    write_uc_reg_withdbg(UC_X86_REG_R15, Script::Register::R15);
 
-    auto write_uc_segreg = [&](uc_x86_reg ucreg, unsigned short seg) {
-        if ((err = uc_reg_write(uc, ucreg, &seg)) != UC_ERR_OK) {
+    auto write_uc_reg = [&](uc_x86_reg ucreg, uint64_t val) {
+        if ((err = uc_reg_write(uc, ucreg, &val)) != UC_ERR_OK) {
             dprintf("uc_reg_write() failed!!! ucreg:%d err:%d| \n", ucreg, err);
         }
         };
-    write_uc_segreg(UC_X86_REG_CS, regs.regcontext.cs);
-    write_uc_segreg(UC_X86_REG_DS, regs.regcontext.ds);
-    write_uc_segreg(UC_X86_REG_FS_BASE, regs.regcontext.fs);
-    write_uc_segreg(UC_X86_REG_GS_BASE, regs.regcontext.gs);
-    write_uc_segreg(UC_X86_REG_SS, regs.regcontext.ss);
-    write_uc_segreg(UC_X86_REG_ES, regs.regcontext.es);
 
-    regs.regcontext.eflags &= (~0x100); // 清除TF位（因为x64dbg可能会设置此位，导致unicorn无法顺利执行）
+    write_uc_reg(UC_X86_REG_CS, regs.regcontext.cs);
+    write_uc_reg(UC_X86_REG_DS, regs.regcontext.ds);
+    //write_uc_reg(UC_X86_REG_FS_BASE, regs.regcontext.fs);
+    uint64_t gs_base = DbgGetTebAddress(DbgGetThreadId()); // TEB address
+    write_uc_reg(UC_X86_REG_GS_BASE, gs_base);
+    write_uc_reg(UC_X86_REG_SS, regs.regcontext.ss);
+    write_uc_reg(UC_X86_REG_ES, regs.regcontext.es);
+
+    regs.regcontext.eflags &= (~0x100); // 清除TF位（因为x64dbg可能会设置此位，导致unicorn无法顺利地模拟执行）
     if ((err = uc_reg_write(uc, UC_X86_REG_RFLAGS, &(regs.regcontext.eflags))) != UC_ERR_OK) {
         dprintf("EFLAGS uc_reg_write() failed!!! err:%d\n", err);
         return false;
@@ -402,16 +341,18 @@ static bool cbExampleCommand_unicorn(int argc, char** argv) {
 
     if ((!Script::Memory::Read(stack_begin, buf, stack_size, &readsize)) || (readsize != stack_size)) {
         dprintf("Script::Memory::Read() failed!!!\n");
+        delete[] buf;
         return false;
     }
     if (uc_mem_write(uc, stack_begin, buf, stack_size_align) != UC_ERR_OK) {
         dprintf("uc_mem_write() failed!!!\n");
+        delete[] buf;
         return false;
     }
     delete[] buf;
 
     //set hooks
-    err = uc_hook_add(uc, &hookcode, UC_HOOK_CODE, EmuHookCode, nullptr, rip, rip + 0x100);
+    err = uc_hook_add(uc, &hookcode, UC_HOOK_CODE, EmuHookCode, nullptr, 1, 0);
     if (err != UC_ERR_OK) {
         dprintf("Failed to register code hook\n");
         return false;
@@ -421,14 +362,18 @@ static bool cbExampleCommand_unicorn(int argc, char** argv) {
         dprintf("Failed to register mem invalid hook\n");
         return false;
     }
+
+    err = uc_hook_add(uc, &hookIntr, UC_HOOK_INTR, EmuHookIntr, nullptr, 1, 0);
+    if (err != UC_ERR_OK) {
+        dprintf("Failed to register mem syscall hook\n");
+        return false;
+    }
+
     //err = uc_hook_add(uc, &hookMem, UC_HOOK_MEM_WRITE, EmuHookMem, nullptr, 1, 0);
     //if (err != UC_ERR_OK) {
     //    dprintf("Failed to register mem write\n");
     //    return false;
     //}
-
-    duint final_addr = 0;
-    parseExpr(argv[1], final_addr);
 
     if ((err = uc_emu_start(uc, rip, final_addr, 0, 0)) != UC_ERR_OK) {
         dprintf("uc_emu_start() failed!!! err:%d\n", err);
@@ -447,31 +392,69 @@ static bool cbExampleCommand_unicorn(int argc, char** argv) {
 
     return true;
 }
+static bool cbExampleCommand_unicorn(int argc, char** argv) {
+
+    if (argc < 2) {
+        dprintf("Usage: unicorn [final_addr]\n");
+        return false;
+    }
+    DbgScriptCmdExec("ClearLog"); // 清屏
+    
+    auto parseExpr = [](const char* expression, duint& value) {
+        bool success = false;
+        value = DbgEval(expression, &success);
+        if (!success) {
+            dprintf("Invalid expression '%s'\n", expression);
+        }
+        return success;
+    };
+
+    duint final_addr = 0;
+    parseExpr(argv[1], final_addr);
+
+    return unicorn_main_emu(final_addr);
+}
+
+void quick_emu() { // 针对菜单
+    if (!DbgIsDebugging()) {
+        MessageBoxW(NULL, L"请先进入调试状态", L"unicorn", MB_OK);
+        return;
+    }
+    SELECTIONDATA sel;
+    GuiSelectionGet(GUI_DISASSEMBLY, &sel);
+    dprintf("Seting Until Address: %llX\n", sel.start);
+    DbgScriptCmdExec("ClearLog"); // 清屏
+    unicorn_main_emu(sel.start);
+}
 
 bool pluginInit(PLUG_INITSTRUCT* initStruct){
     dprintf("pluginInit(pluginHandle: %d)\n", pluginHandle);
 
     cs_open(CS_ARCH_X86, CS_MODE_64, &hCs);
     _plugin_registercommand(pluginHandle, "xzc", cbExampleCommand, true);
-    _plugin_registercommand(pluginHandle, "unicorn", cbExampleCommand_unicorn, true);
+    _plugin_registercommand(pluginHandle, "uc", cbExampleCommand_unicorn, true);
 
     // Return false to cancel loading the plugin.
     return true;
 }
 
-// Deinitialize your plugin data here.
-// NOTE: you are responsible for gracefully closing your GUI
-// This function is not executed on the GUI thread, so you might need
-// to use WaitForSingleObject or similar to wait for everything to close.
 void pluginStop(){
     cs_close(&hCs);
 }
 
-// Do GUI/Menu related things here.
-// This code runs on the GUI thread: GetCurrentThreadId() == GuiGetMainThreadId()
-// You can get the HWND using GuiGetWindowHandle()
+PLUG_EXPORT void CBMENUENTRY(CBTYPE cbType, PLUG_CB_MENUENTRY* info) {
+    switch (info->hEntry) {
+    case MENU_QUICK_EMU:
+        quick_emu();
+        break;
+
+    default:
+        break;
+    }
+}
+
 void pluginSetup(){
-    
+    _plugin_menuaddentry(hMenuDisasm, MENU_QUICK_EMU, "start");
 }
 
 uint64_t get_stack_begin() {
