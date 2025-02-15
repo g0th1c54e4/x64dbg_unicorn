@@ -80,11 +80,11 @@ typedef struct _MAPPER{
 }MAPPER, * PMAPPER;
 std::vector<MAPPER> gMappedMemoryInfo;
 
-void EmuHookIntr(uc_engine* uc, uint32_t intno, void* user_data) {
+void EmuHookSyscall(uc_engine* uc, uint32_t intno, void* user_data) {
     duint curRip;
     uc_reg_read(uc, UC_X86_REG_RIP, &curRip);
 
-    dprintf("meet Intr Instruction! rip: %llX\n", curRip);
+    dprintf("Found SYSCALL Instruction!  location: %llX\n", curRip);
 }
 
 void EmuHookCode(uc_engine* uc, duint addr, size_t size, void* userdata){
@@ -363,9 +363,9 @@ bool unicorn_main_emu(uint64_t final_addr) {
         return false;
     }
 
-    err = uc_hook_add(uc, &hookIntr, UC_HOOK_INTR, EmuHookIntr, nullptr, 1, 0);
+    err = uc_hook_add(uc, &hookIntr, UC_HOOK_INSN, EmuHookSyscall, nullptr, 1, 0, UC_X86_INS_SYSCALL);
     if (err != UC_ERR_OK) {
-        dprintf("Failed to register mem syscall hook\n");
+        dprintf("Failed to register syscall hook\n");
         return false;
     }
 
