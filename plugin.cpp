@@ -8,6 +8,8 @@ uc_hook hookcode;
 uc_hook hookMemInvalid;
 uc_hook hookMem;
 uc_hook hookIntr;
+
+
 csh hCs = 0;
 
 enum {
@@ -190,6 +192,33 @@ static bool cbExampleCommand(int argc, char** argv) {
     return true;
 }
 bool unicorn_main_emu(uint64_t final_addr) {
+
+    auto free_uc = [](uc_engine* uc) -> bool {
+        uc_err err;
+        uc_mem_region* region;
+        uint32_t count;
+        if ((err = uc_mem_regions(uc, &region, &count)) != UC_ERR_OK) {
+            dprintf("uc_mem_regions() failed!!! err:%d\n", err);
+            return false;
+        }
+        for (int i = 0; i < count; i++) {
+            size_t mapsize = (region[i].end - region[i].begin) + 1;
+            if ((err = uc_mem_unmap(uc, region[i].begin, mapsize)) != UC_ERR_OK) {
+                dprintf("uc_mem_unmap() failed!!! err:%d\n", err);
+                return false;
+            }
+        }
+        if ((err = uc_free(region))) {
+            dprintf("uc_free() failed!!! err:%d\n", err);
+            return false;
+        }
+        if ((err = uc_close(uc)) != UC_ERR_OK) {
+            dprintf("uc_close() failed!!! err:%d\n", err);
+            return false;
+        }
+        return true;
+    };
+
     uc_engine* uc;
     uc_err err;
     err = uc_open(UC_ARCH_X86, UC_MODE_64, &uc);
@@ -198,13 +227,9 @@ bool unicorn_main_emu(uint64_t final_addr) {
         dprintf("uc_open() failed!!!\n");
         return false;
     }
+
     duint modBase = Script::Module::GetMainModuleBase();
     duint modSize = Script::Module::GetMainModuleSize();
-    //if (uc_mem_map(uc, modBase, modSize, UC_PROT_ALL) != UC_ERR_OK) { // 对主模块进行映射
-    //    dprintf("uc_mem_map() failed!!!\n");
-    //    return false;
-    //}
-
     { // 对诸如"堆"的内存区域进行初始化
         MEMMAP map{};
         DbgMemMap(&map);
@@ -215,10 +240,13 @@ bool unicorn_main_emu(uint64_t final_addr) {
             if (map.page[i].mbi.Protect == 0 || map.page[i].mbi.Protect == PAGE_NOACCESS || !DbgMemIsValidReadPtr((duint)map.page[i].mbi.BaseAddress)) { // 没权限
                 continue;
             }
-
             uint64_t mem_addr = (uint64_t)map.page[i].mbi.BaseAddress;
             uint64_t mem_size = (uint64_t)map.page[i].mbi.RegionSize;
-            if ((err = uc_mem_map(uc, mem_addr, mem_size, UC_PROT_ALL)) != UC_ERR_OK) {
+            uint32_t prot = UC_PROT_ALL;
+            //if (map.page[i].mbi.Type == MEM_IMAGE && !(mem_addr >= modBase && (mem_addr + mem_size) <= (modBase + modSize))) {
+            //    prot = UC_PROT_READ | UC_PROT_WRITE;
+            //}
+            if ((err = uc_mem_map(uc, mem_addr, mem_size, prot)) != UC_ERR_OK) {
                 dprintf("uc_mem_map() failed!!! err:%d\n", err);
                 return false;
             }
@@ -229,8 +257,8 @@ bool unicorn_main_emu(uint64_t final_addr) {
                 delete[] buf;
                 return false;
             }
-            if (uc_mem_write(uc, mem_addr, buf, mem_size) != UC_ERR_OK) {
-                dprintf("uc_mem_write() failed!!!\n");
+            if ((err = uc_mem_write(uc, mem_addr, buf, mem_size)) != UC_ERR_OK) {
+                dprintf("uc_mem_write() failed!!! err:%d\n", err);
                 delete[] buf;
                 return false;
             }
@@ -243,12 +271,14 @@ bool unicorn_main_emu(uint64_t final_addr) {
         duint readsize = 0;
         if ((!Script::Memory::Read(modBase, buf, modSize, &readsize)) || (readsize != modSize)) {
             dprintf("Script::Memory::Read() failed!!!\n");
+            free_uc(uc);
             delete[] buf;
             return false;
         }
 
-        if (uc_mem_write(uc, modBase, buf, modSize) != UC_ERR_OK) {
-            dprintf("uc_mem_write() failed!!!\n");
+        if ((err = uc_mem_write(uc, modBase, buf, modSize)) != UC_ERR_OK) {
+            dprintf("uc_mem_write() failed!!! err:%d\n", err);
+            free_uc(uc);
             delete[] buf;
             return false;
         }
@@ -265,12 +295,14 @@ bool unicorn_main_emu(uint64_t final_addr) {
 
         if ((!Script::Memory::Read(sectionInfo[i].addr, buf, sectionInfo[i].size, &readsize)) || (readsize != sectionInfo[i].size)) {
             dprintf("Script::Memory::Read() failed!!!\n");
+            free_uc(uc);
             delete[] buf;
             return false;
         }
 
-        if (uc_mem_write(uc, sectionInfo[i].addr, buf, sectionInfo[i].size) != UC_ERR_OK) {
-            dprintf("uc_mem_write() failed!!!\n");
+        if ((err = uc_mem_write(uc, sectionInfo[i].addr, buf, sectionInfo[i].size)) != UC_ERR_OK) {
+            dprintf("uc_mem_write() failed!!! err:%d\n", err);
+            free_uc(uc);
             delete[] buf;
             return false;
         }
@@ -288,6 +320,7 @@ bool unicorn_main_emu(uint64_t final_addr) {
     REGDUMP regs;
     if (!DbgGetRegDumpEx(&regs, sizeof(REGDUMP))) {
         dprintf("DbgGetRegDumpEx() failed!!!\n");
+        free_uc(uc);
         return false;
     }
 
@@ -326,6 +359,7 @@ bool unicorn_main_emu(uint64_t final_addr) {
     regs.regcontext.eflags &= (~0x100); // 清除TF位（因为x64dbg可能会设置此位，导致unicorn无法顺利地模拟执行）
     if ((err = uc_reg_write(uc, UC_X86_REG_RFLAGS, &(regs.regcontext.eflags))) != UC_ERR_OK) {
         dprintf("EFLAGS uc_reg_write() failed!!! err:%d\n", err);
+        free_uc(uc);
         return false;
     }
 
@@ -341,11 +375,13 @@ bool unicorn_main_emu(uint64_t final_addr) {
 
     if ((!Script::Memory::Read(stack_begin, buf, stack_size, &readsize)) || (readsize != stack_size)) {
         dprintf("Script::Memory::Read() failed!!!\n");
+        free_uc(uc);
         delete[] buf;
         return false;
     }
-    if (uc_mem_write(uc, stack_begin, buf, stack_size_align) != UC_ERR_OK) {
-        dprintf("uc_mem_write() failed!!!\n");
+    if ((err = uc_mem_write(uc, stack_begin, buf, stack_size_align)) != UC_ERR_OK) {
+        dprintf("uc_mem_write() failed!!! err:%d\n", err);
+        free_uc(uc);
         delete[] buf;
         return false;
     }
@@ -355,17 +391,20 @@ bool unicorn_main_emu(uint64_t final_addr) {
     err = uc_hook_add(uc, &hookcode, UC_HOOK_CODE, EmuHookCode, nullptr, 1, 0);
     if (err != UC_ERR_OK) {
         dprintf("Failed to register code hook\n");
+        free_uc(uc);
         return false;
     }
     err = uc_hook_add(uc, &hookMemInvalid, UC_HOOK_MEM_INVALID, EmuHookMemInvalid, nullptr, 1, 0);
     if (err != UC_ERR_OK) {
         dprintf("Failed to register mem invalid hook\n");
+        free_uc(uc);
         return false;
     }
 
     err = uc_hook_add(uc, &hookIntr, UC_HOOK_INSN, EmuHookSyscall, nullptr, 1, 0, UC_X86_INS_SYSCALL);
     if (err != UC_ERR_OK) {
         dprintf("Failed to register syscall hook\n");
+        free_uc(uc);
         return false;
     }
 
@@ -378,17 +417,14 @@ bool unicorn_main_emu(uint64_t final_addr) {
     if ((err = uc_emu_start(uc, rip, final_addr, 0, 0)) != UC_ERR_OK) {
         dprintf("uc_emu_start() failed!!! err:%d\n", err);
         Unicorn_error_print_infomation(uc);
+        free_uc(uc);
         return false;
     }
     else {
         dprintf("uc_emu_start() success!!!\n");
         Unicorn_error_print_infomation(uc);
     }
-
-    if (uc_close(uc) != UC_ERR_OK) {
-        dprintf("uc_close() failed!!!\n");
-        return false;
-    }
+    free_uc(uc);
 
     return true;
 }
@@ -414,6 +450,136 @@ static bool cbExampleCommand_unicorn(int argc, char** argv) {
 
     return unicorn_main_emu(final_addr);
 }
+triton::Context ctx;
+static bool cbExampleCommand_triton(int argc, char** argv) {
+    DbgScriptCmdExec("ClearLog"); // 清屏
+    using namespace triton;
+    using namespace triton::arch;
+    using namespace triton::arch::x86;
+
+    ctx.setArchitecture(ARCH_X86_64);
+    ctx.setMode(triton::modes::mode_e::ALIGNED_MEMORY, true);
+    ctx.setAstRepresentationMode(triton::ast::representations::mode_e::PYTHON_REPRESENTATION);
+
+    { // 对诸如"堆"的内存区域进行初始化
+        MEMMAP map{};
+        DbgMemMap(&map);
+        for (int i = 0; i < map.count; i++) {
+            if (map.page[i].mbi.Protect == 0 || map.page[i].mbi.Protect == PAGE_NOACCESS || !DbgMemIsValidReadPtr((duint)map.page[i].mbi.BaseAddress)) { // 没权限
+                continue;
+            }
+
+            uint64_t mem_addr = (uint64_t)map.page[i].mbi.BaseAddress;
+            uint64_t mem_size = (uint64_t)map.page[i].mbi.RegionSize;
+            uint8_t* buf = new uint8_t[mem_size]();
+            duint readsize = 0;
+            if ((!Script::Memory::Read(mem_addr, buf, mem_size, &readsize)) || (readsize != mem_size)) {
+                dprintf("Script::Memory::Read() failed!!!\n");
+                delete[] buf;
+                return false;
+            }
+            ctx.setConcreteMemoryAreaValue(mem_addr, buf, mem_size);
+            delete[] buf;
+        }
+    }
+
+    //{
+    //    duint modBase = Script::Module::GetMainModuleBase();
+    //    duint modSize = Script::Module::GetMainModuleSize();
+    //    uint8_t* buf = new uint8_t[modSize]();
+    //    duint readsize = 0;
+    //    if ((!Script::Memory::Read(modBase, buf, modSize, &readsize)) || (readsize != modSize)) {
+    //        dprintf("Script::Memory::Read() failed!!!\n");
+    //        delete[] buf;
+    //        return false;
+    //    }
+    //    ctx.setConcreteMemoryAreaValue(modBase, buf, modSize);
+    //    delete[] buf;
+    //}
+
+    //ListInfo modSecs;
+    //Script::Module::GetMainModuleSectionList(&modSecs);
+    //Script::Module::ModuleSectionInfo* sectionInfo(static_cast<Script::Module::ModuleSectionInfo*>(modSecs.data));
+    //for (int i = 0; i < modSecs.count; i++) {
+
+    //    uint8_t* buf = new uint8_t[sectionInfo[i].size]();
+    //    duint readsize = 0;
+
+    //    if ((!Script::Memory::Read(sectionInfo[i].addr, buf, sectionInfo[i].size, &readsize)) || (readsize != sectionInfo[i].size)) {
+    //        dprintf("Script::Memory::Read() failed!!!\n");
+    //        delete[] buf;
+    //        return false;
+    //    }
+    //    ctx.setConcreteMemoryAreaValue(sectionInfo[i].addr, buf, sectionInfo[i].size);
+    //    delete[] buf;
+    //}
+    //BridgeFree(sectionInfo);
+
+    REGDUMP regs;
+    if (!DbgGetRegDumpEx(&regs, sizeof(REGDUMP))) {
+        dprintf("DbgGetRegDumpEx() failed!!!\n");
+        return false;
+    }
+    
+    auto write_triton_reg_withdbg = [&](const triton::arch::Register& reg, Script::Register::RegisterEnum dbgreg) {
+        duint reg_value = Script::Register::Get(dbgreg);
+        ctx.setConcreteRegisterValue(reg, reg_value);
+    };
+
+    write_triton_reg_withdbg(ctx.registers.x86_rax, Script::Register::RAX);
+    write_triton_reg_withdbg(ctx.registers.x86_rbx, Script::Register::RBX);
+    write_triton_reg_withdbg(ctx.registers.x86_rcx, Script::Register::RCX);
+    write_triton_reg_withdbg(ctx.registers.x86_rdx, Script::Register::RDX);
+    write_triton_reg_withdbg(ctx.registers.x86_rsp, Script::Register::RSP);
+    write_triton_reg_withdbg(ctx.registers.x86_rbp, Script::Register::RBP);
+    write_triton_reg_withdbg(ctx.registers.x86_rsi, Script::Register::RSI);
+    write_triton_reg_withdbg(ctx.registers.x86_rdi, Script::Register::RDI);
+    write_triton_reg_withdbg(ctx.registers.x86_rip, Script::Register::RIP);
+    write_triton_reg_withdbg(ctx.registers.x86_r8, Script::Register::R8);
+    write_triton_reg_withdbg(ctx.registers.x86_r9, Script::Register::R9);
+    write_triton_reg_withdbg(ctx.registers.x86_r10, Script::Register::R10);
+    write_triton_reg_withdbg(ctx.registers.x86_r11, Script::Register::R11);
+    write_triton_reg_withdbg(ctx.registers.x86_r12, Script::Register::R12);
+    write_triton_reg_withdbg(ctx.registers.x86_r13, Script::Register::R13);
+    write_triton_reg_withdbg(ctx.registers.x86_r14, Script::Register::R14);
+    write_triton_reg_withdbg(ctx.registers.x86_r15, Script::Register::R15);
+
+    ctx.setConcreteRegisterValue(ctx.registers.x86_cs, regs.regcontext.cs);
+    ctx.setConcreteRegisterValue(ctx.registers.x86_ds, regs.regcontext.ds);
+    ctx.setConcreteRegisterValue(ctx.registers.x86_fs, regs.regcontext.fs);
+    ctx.setConcreteRegisterValue(ctx.registers.x86_gs, regs.regcontext.gs);
+    ctx.setConcreteRegisterValue(ctx.registers.x86_ss, regs.regcontext.ss);
+    ctx.setConcreteRegisterValue(ctx.registers.x86_es, regs.regcontext.es);
+
+    regs.regcontext.eflags &= (~0x100); // 清除TF位（因为x64dbg可能会设置此位，导致triton无法顺利地模拟执行）
+    ctx.setConcreteRegisterValue(ctx.registers.x86_eflags, regs.regcontext.eflags);
+
+    uint64_t rsp = Script::Register::GetRSP();
+    uint64_t stack_begin = get_stack_begin();
+    uint64_t stack_end = get_stack_end();
+    uint64_t rip = Script::Register::GetRIP();
+    uint64_t stack_size = stack_end - stack_begin;
+    uint64_t stack_size_align = Align(stack_size, 0x1000);
+
+    uint8_t* buf = new uint8_t[stack_size_align]();
+    duint readsize = 0;
+
+    if ((!Script::Memory::Read(stack_begin, buf, stack_size, &readsize)) || (readsize != stack_size)) {
+        dprintf("Script::Memory::Read() failed!!!\n");
+        delete[] buf;
+        return false;
+    }
+    ctx.setConcreteMemoryAreaValue(stack_begin, buf, stack_size_align);
+    delete[] buf;
+
+    //while () {
+    //    uint64_t rip = (uint64_t)ctx.getConcreteRegisterValue(ctx.registers.x86_rip);
+    //    ctx.processing();
+    //}
+    
+
+    return true;
+}
 
 void quick_emu() { // 针对菜单
     if (!DbgIsDebugging()) {
@@ -433,6 +599,7 @@ bool pluginInit(PLUG_INITSTRUCT* initStruct){
     cs_open(CS_ARCH_X86, CS_MODE_64, &hCs);
     _plugin_registercommand(pluginHandle, "xzc", cbExampleCommand, true);
     _plugin_registercommand(pluginHandle, "uc", cbExampleCommand_unicorn, true);
+    _plugin_registercommand(pluginHandle, "triton", cbExampleCommand_triton, true);
 
     // Return false to cancel loading the plugin.
     return true;
