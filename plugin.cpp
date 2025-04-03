@@ -566,10 +566,8 @@ bool cbExampleCommand_triton(int argc, char** argv) { // 千万不要在Debug配置下运
     regs.regcontext.eflags &= (~0x100); // 清除TF位（因为x64dbg可能会设置此位，导致triton无法顺利地模拟执行）
     ctx->setConcreteRegisterValue(ctx->registers.x86_eflags, regs.regcontext.eflags);
 
-    uint64_t rsp = Script::Register::GetRSP();
     uint64_t stack_begin = get_stack_begin();
     uint64_t stack_end = get_stack_end();
-    uint64_t rip = Script::Register::GetRIP();
     uint64_t stack_size = stack_end - stack_begin;
     uint64_t stack_size_align = Align(stack_size, 0x1000);
 
@@ -587,20 +585,26 @@ bool cbExampleCommand_triton(int argc, char** argv) { // 千万不要在Debug配置下运
     SELECTIONDATA sel;
     GuiSelectionGet(GUI_DISASSEMBLY, &sel);
     dprintf("Seting Until Address: %llX\n", sel.start);
-
+    
+    ctx->taintRegister(ctx->registers.x86_rsi);
     while (true) {
         Instruction inst;
         uint64_t rip = (uint64_t)ctx->getConcreteRegisterValue(ctx->registers.x86_rip);
         if (rip == sel.start) {
             break;
         }
+
         uint8_t codebuf[16]{};
         duint readsize = 0;
         Script::Memory::Read(rip, codebuf, 16, &readsize);
+        inst.setAddress(rip);
         inst.setOpcode(codebuf, readsize);
         ctx->processing(inst);
+        if (inst.isTainted()) {
+            dprintf("Tainted: %llx\n", inst.getAddress());
+        }
     }
-
+    dprintf("\n");
     {
         dprintf("-------------------------------------------\n");
         dprintf("Registers:\n");
@@ -633,9 +637,7 @@ bool cbExampleCommand_triton(int argc, char** argv) { // 千万不要在Debug配置下运
             uint64_t curRsp = (rsp - (4 * 8)) + (i * 8);
             uint64_t curRsp_data = 0;
             auto vec = ctx->getConcreteMemoryAreaValue(curRsp, sizeof(uint64_t));
-            for (size_t i2 = 0; i2 < vec.size(); i2++) { // 解析vec
-                curRsp_data &= i2 << (4 * i2);
-            }
+            std::memcpy(&curRsp_data, vec.data(), vec.size());
             if (curRsp == rsp) {
                 dprintf(" --->| %llX: \t%llX\n", curRsp, curRsp_data);
             }
