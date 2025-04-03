@@ -1,5 +1,6 @@
 #include "plugin.h"
 
+uint64_t get_module_export_function(std::string dll_name, std::string func_name);
 
 uint64_t get_stack_begin();
 uint64_t get_stack_end();
@@ -8,7 +9,6 @@ uc_hook hookcode;
 uc_hook hookMemInvalid;
 uc_hook hookMem;
 uc_hook hookIntr;
-
 
 csh hCs = 0;
 
@@ -87,6 +87,9 @@ void EmuHookSyscall(uc_engine* uc, uint32_t intno, void* user_data) {
     uc_reg_read(uc, UC_X86_REG_RIP, &curRip);
 
     dprintf("Found SYSCALL Instruction!  location: %llX\n", curRip);
+
+    //curRip = 0x55555555;
+    //uc_reg_write(uc, UC_X86_REG_RIP, &curRip); // 可以修改RIP!!!
 }
 
 void EmuHookCode(uc_engine* uc, duint addr, size_t size, void* userdata){
@@ -119,6 +122,9 @@ bool EmuHookMemInvalid(uc_engine* uc, uc_mem_type type, duint address, int size,
     case UC_MEM_FETCH_UNMAPPED:
         dprintf("Unmapped memory FETCH reached | address: %llX   rip: %llX\n", address, curRip);
         return false;
+    case UC_MEM_FETCH_PROT:
+        //dprintf("Exec to Memory at: %llX, value: %llX, size: %u\n", address, value, size);
+        break;
     }
     return true;
 }
@@ -188,6 +194,10 @@ static bool cbExampleCommand(int argc, char** argv) {
         //}
         //dprintf("Memory Map Total Size: 0x%llX\n", totalSize);
     }
+    if (strcmp(argv[1], "print2") == 0) {
+        uint64_t addr = get_module_export_function(argv[2], argv[3]);
+        dprintf("export function address: %llX\n", addr);
+    }
 
     return true;
 }
@@ -243,9 +253,9 @@ bool unicorn_main_emu(uint64_t final_addr) {
             uint64_t mem_addr = (uint64_t)map.page[i].mbi.BaseAddress;
             uint64_t mem_size = (uint64_t)map.page[i].mbi.RegionSize;
             uint32_t prot = UC_PROT_ALL;
-            //if (map.page[i].mbi.Type == MEM_IMAGE && !(mem_addr >= modBase && (mem_addr + mem_size) <= (modBase + modSize))) {
-            //    prot = UC_PROT_READ | UC_PROT_WRITE;
-            //}
+            if (map.page[i].mbi.Type == MEM_IMAGE && !(mem_addr >= modBase && (mem_addr + mem_size) <= (modBase + modSize))) {
+                prot = UC_PROT_READ | UC_PROT_WRITE;
+            }
             if ((err = uc_mem_map(uc, mem_addr, mem_size, prot)) != UC_ERR_OK) {
                 dprintf("uc_mem_map() failed!!! err:%d\n", err);
                 return false;
@@ -346,7 +356,7 @@ bool unicorn_main_emu(uint64_t final_addr) {
         if ((err = uc_reg_write(uc, ucreg, &val)) != UC_ERR_OK) {
             dprintf("uc_reg_write() failed!!! ucreg:%d err:%d| \n", ucreg, err);
         }
-        };
+    };
 
     write_uc_reg(UC_X86_REG_CS, regs.regcontext.cs);
     write_uc_reg(UC_X86_REG_DS, regs.regcontext.ds);
@@ -450,17 +460,21 @@ static bool cbExampleCommand_unicorn(int argc, char** argv) {
 
     return unicorn_main_emu(final_addr);
 }
-triton::Context ctx;
-static bool cbExampleCommand_triton(int argc, char** argv) {
-    DbgScriptCmdExec("ClearLog"); // 清屏
-    using namespace triton;
-    using namespace triton::arch;
-    using namespace triton::arch::x86;
 
-    ctx.setArchitecture(ARCH_X86_64);
-    ctx.setMode(triton::modes::mode_e::ALIGNED_MEMORY, true);
-    ctx.setAstRepresentationMode(triton::ast::representations::mode_e::PYTHON_REPRESENTATION);
+using namespace triton;
+using namespace triton::arch;
+using namespace triton::arch::x86;
 
+
+
+bool cbExampleCommand_triton(int argc, char** argv) {
+
+    // DbgScriptCmdExec("ClearLog"); // 清屏
+
+    triton::Context* ctx = new triton::Context(ARCH_X86_64);
+    ctx->setMode(triton::modes::mode_e::ALIGNED_MEMORY, true);
+    ctx->setAstRepresentationMode(triton::ast::representations::mode_e::PYTHON_REPRESENTATION);
+    
     { // 对诸如"堆"的内存区域进行初始化
         MEMMAP map{};
         DbgMemMap(&map);
@@ -478,7 +492,7 @@ static bool cbExampleCommand_triton(int argc, char** argv) {
                 delete[] buf;
                 return false;
             }
-            ctx.setConcreteMemoryAreaValue(mem_addr, buf, mem_size);
+            ctx->setConcreteMemoryAreaValue(mem_addr, buf, mem_size);
             delete[] buf;
         }
     }
@@ -493,7 +507,7 @@ static bool cbExampleCommand_triton(int argc, char** argv) {
     //        delete[] buf;
     //        return false;
     //    }
-    //    ctx.setConcreteMemoryAreaValue(modBase, buf, modSize);
+    //    ctx->setConcreteMemoryAreaValue(modBase, buf, modSize);
     //    delete[] buf;
     //}
 
@@ -510,7 +524,7 @@ static bool cbExampleCommand_triton(int argc, char** argv) {
     //        delete[] buf;
     //        return false;
     //    }
-    //    ctx.setConcreteMemoryAreaValue(sectionInfo[i].addr, buf, sectionInfo[i].size);
+    //    ctx->setConcreteMemoryAreaValue(sectionInfo[i].addr, buf, sectionInfo[i].size);
     //    delete[] buf;
     //}
     //BridgeFree(sectionInfo);
@@ -523,36 +537,54 @@ static bool cbExampleCommand_triton(int argc, char** argv) {
     
     auto write_triton_reg_withdbg = [&](const triton::arch::Register& reg, Script::Register::RegisterEnum dbgreg) {
         duint reg_value = Script::Register::Get(dbgreg);
-        ctx.setConcreteRegisterValue(reg, reg_value);
+        ctx->setConcreteRegisterValue(reg, (uint64_t)reg_value);
     };
 
-    write_triton_reg_withdbg(ctx.registers.x86_rax, Script::Register::RAX);
-    write_triton_reg_withdbg(ctx.registers.x86_rbx, Script::Register::RBX);
-    write_triton_reg_withdbg(ctx.registers.x86_rcx, Script::Register::RCX);
-    write_triton_reg_withdbg(ctx.registers.x86_rdx, Script::Register::RDX);
-    write_triton_reg_withdbg(ctx.registers.x86_rsp, Script::Register::RSP);
-    write_triton_reg_withdbg(ctx.registers.x86_rbp, Script::Register::RBP);
-    write_triton_reg_withdbg(ctx.registers.x86_rsi, Script::Register::RSI);
-    write_triton_reg_withdbg(ctx.registers.x86_rdi, Script::Register::RDI);
-    write_triton_reg_withdbg(ctx.registers.x86_rip, Script::Register::RIP);
-    write_triton_reg_withdbg(ctx.registers.x86_r8, Script::Register::R8);
-    write_triton_reg_withdbg(ctx.registers.x86_r9, Script::Register::R9);
-    write_triton_reg_withdbg(ctx.registers.x86_r10, Script::Register::R10);
-    write_triton_reg_withdbg(ctx.registers.x86_r11, Script::Register::R11);
-    write_triton_reg_withdbg(ctx.registers.x86_r12, Script::Register::R12);
-    write_triton_reg_withdbg(ctx.registers.x86_r13, Script::Register::R13);
-    write_triton_reg_withdbg(ctx.registers.x86_r14, Script::Register::R14);
-    write_triton_reg_withdbg(ctx.registers.x86_r15, Script::Register::R15);
+    write_triton_reg_withdbg(ctx->registers.x86_rax, Script::Register::RAX);
+    write_triton_reg_withdbg(ctx->registers.x86_rbx, Script::Register::RBX);
+    write_triton_reg_withdbg(ctx->registers.x86_rcx, Script::Register::RCX);
+    write_triton_reg_withdbg(ctx->registers.x86_rdx, Script::Register::RDX);
+    write_triton_reg_withdbg(ctx->registers.x86_rsp, Script::Register::RSP);
+    write_triton_reg_withdbg(ctx->registers.x86_rbp, Script::Register::RBP);
+    write_triton_reg_withdbg(ctx->registers.x86_rsi, Script::Register::RSI);
+    write_triton_reg_withdbg(ctx->registers.x86_rdi, Script::Register::RDI);
+    write_triton_reg_withdbg(ctx->registers.x86_rip, Script::Register::RIP);
+    write_triton_reg_withdbg(ctx->registers.x86_r8 , Script::Register::R8);
+    write_triton_reg_withdbg(ctx->registers.x86_r9 , Script::Register::R9);
+    write_triton_reg_withdbg(ctx->registers.x86_r10, Script::Register::R10);
+    write_triton_reg_withdbg(ctx->registers.x86_r11, Script::Register::R11);
+    write_triton_reg_withdbg(ctx->registers.x86_r12, Script::Register::R12);
+    write_triton_reg_withdbg(ctx->registers.x86_r13, Script::Register::R13);
+    write_triton_reg_withdbg(ctx->registers.x86_r14, Script::Register::R14);
+    write_triton_reg_withdbg(ctx->registers.x86_r15, Script::Register::R15);
+    
+    dprintf("rax: %llX\n", (uint64_t)ctx->getConcreteRegisterValue(ctx->registers.x86_rax));
+    dprintf("rbx: %llX\n", (uint64_t)ctx->getConcreteRegisterValue(ctx->registers.x86_rbx));
+    dprintf("rcx: %llX\n", (uint64_t)ctx->getConcreteRegisterValue(ctx->registers.x86_rcx));
+    dprintf("rdx: %llX\n", (uint64_t)ctx->getConcreteRegisterValue(ctx->registers.x86_rdx));
+    dprintf("rsp: %llX\n", (uint64_t)ctx->getConcreteRegisterValue(ctx->registers.x86_rsp));
+    dprintf("rbp: %llX\n", (uint64_t)ctx->getConcreteRegisterValue(ctx->registers.x86_rbp));
+    dprintf("rsi: %llX\n", (uint64_t)ctx->getConcreteRegisterValue(ctx->registers.x86_rsi));
+    dprintf("rdi: %llX\n", (uint64_t)ctx->getConcreteRegisterValue(ctx->registers.x86_rdi));
+    dprintf("rip: %llX\n", (uint64_t)ctx->getConcreteRegisterValue(ctx->registers.x86_rip));
+    dprintf("r8: %llX\n", (uint64_t)ctx->getConcreteRegisterValue(ctx->registers.x86_r8));
+    dprintf("r9: %llX\n", (uint64_t)ctx->getConcreteRegisterValue(ctx->registers.x86_r9));
+    dprintf("r10: %llX\n", (uint64_t)ctx->getConcreteRegisterValue(ctx->registers.x86_r10));
+    dprintf("r11: %llX\n", (uint64_t)ctx->getConcreteRegisterValue(ctx->registers.x86_r11));
+    dprintf("r12: %llX\n", (uint64_t)ctx->getConcreteRegisterValue(ctx->registers.x86_r12));
+    dprintf("r13: %llX\n", (uint64_t)ctx->getConcreteRegisterValue(ctx->registers.x86_r13));
+    dprintf("r14: %llX\n", (uint64_t)ctx->getConcreteRegisterValue(ctx->registers.x86_r14));
+    dprintf("r15: %llX\n", (uint64_t)ctx->getConcreteRegisterValue(ctx->registers.x86_r15));
 
-    ctx.setConcreteRegisterValue(ctx.registers.x86_cs, regs.regcontext.cs);
-    ctx.setConcreteRegisterValue(ctx.registers.x86_ds, regs.regcontext.ds);
-    ctx.setConcreteRegisterValue(ctx.registers.x86_fs, regs.regcontext.fs);
-    ctx.setConcreteRegisterValue(ctx.registers.x86_gs, regs.regcontext.gs);
-    ctx.setConcreteRegisterValue(ctx.registers.x86_ss, regs.regcontext.ss);
-    ctx.setConcreteRegisterValue(ctx.registers.x86_es, regs.regcontext.es);
+    ctx->setConcreteRegisterValue(ctx->registers.x86_cs, regs.regcontext.cs);
+    ctx->setConcreteRegisterValue(ctx->registers.x86_ds, regs.regcontext.ds);
+    ctx->setConcreteRegisterValue(ctx->registers.x86_fs, regs.regcontext.fs);
+    ctx->setConcreteRegisterValue(ctx->registers.x86_gs, regs.regcontext.gs);
+    ctx->setConcreteRegisterValue(ctx->registers.x86_ss, regs.regcontext.ss);
+    ctx->setConcreteRegisterValue(ctx->registers.x86_es, regs.regcontext.es);
 
     regs.regcontext.eflags &= (~0x100); // 清除TF位（因为x64dbg可能会设置此位，导致triton无法顺利地模拟执行）
-    ctx.setConcreteRegisterValue(ctx.registers.x86_eflags, regs.regcontext.eflags);
+    ctx->setConcreteRegisterValue(ctx->registers.x86_eflags, regs.regcontext.eflags);
 
     uint64_t rsp = Script::Register::GetRSP();
     uint64_t stack_begin = get_stack_begin();
@@ -569,12 +601,12 @@ static bool cbExampleCommand_triton(int argc, char** argv) {
         delete[] buf;
         return false;
     }
-    ctx.setConcreteMemoryAreaValue(stack_begin, buf, stack_size_align);
+    ctx->setConcreteMemoryAreaValue(stack_begin, buf, stack_size_align);
     delete[] buf;
 
     //while () {
-    //    uint64_t rip = (uint64_t)ctx.getConcreteRegisterValue(ctx.registers.x86_rip);
-    //    ctx.processing();
+    //    uint64_t rip = (uint64_t)ctx->getConcreteRegisterValue(ctx->registers.x86_rip);
+    //    ctx->processing();
     //}
     
 
@@ -594,6 +626,7 @@ void quick_emu() { // 针对菜单
 }
 
 bool pluginInit(PLUG_INITSTRUCT* initStruct){
+    
     dprintf("pluginInit(pluginHandle: %d)\n", pluginHandle);
 
     cs_open(CS_ARCH_X86, CS_MODE_64, &hCs);
@@ -624,6 +657,32 @@ void pluginSetup(){
     _plugin_menuaddentry(hMenuDisasm, MENU_QUICK_EMU, "start");
 }
 
+uint64_t get_module_export_function(std::string dll_name, std::string func_name){
+    uint64_t result = 0;
+
+    ListInfo mods;
+    Script::Module::GetList(&mods);
+    Script::Module::ModuleInfo* modInfo(static_cast<Script::Module::ModuleInfo*>(mods.data));
+    for (int i = 0; i < mods.count; i++) {
+        if (strcmp(modInfo[i].name, dll_name.c_str()) == 0) {
+            ListInfo modExports;
+            Script::Module::GetExports(&modInfo[i], &modExports);
+            Script::Module::ModuleExport* ExportInfo(static_cast<Script::Module::ModuleExport*>(modExports.data));
+            for (int i = 0; i < modExports.count; i++) {
+                if (strcmp(ExportInfo[i].name, func_name.c_str()) == 0) {
+                    result = ExportInfo[i].va;
+                    break;
+                }
+            }
+            BridgeFree(ExportInfo);
+            if (result != 0) {
+                break;
+            }
+        }
+    }
+    BridgeFree(modInfo);
+    return result;
+}
 uint64_t get_stack_begin() {
     uint64_t rsp = Script::Register::GetRSP();
     MEMMAP map{};
