@@ -68,6 +68,7 @@ void Unicorn_error_print_infomation(uc_engine* uc) {
 
     dprintf("-------------------------------------------\n");
 }
+
 uint64_t Align(uint64_t value, uint64_t align_value) {
     if (value / align_value * align_value == value) {
         return value;
@@ -467,9 +468,9 @@ using namespace triton::arch::x86;
 
 
 
-bool cbExampleCommand_triton(int argc, char** argv) {
+bool cbExampleCommand_triton(int argc, char** argv) { // 千万不要在Debug配置下运行，不然triton会出现莫名其妙的BUG
 
-    // DbgScriptCmdExec("ClearLog"); // 清屏
+    DbgScriptCmdExec("ClearLog"); // 清屏
 
     triton::Context* ctx = new triton::Context(ARCH_X86_64);
     ctx->setMode(triton::modes::mode_e::ALIGNED_MEMORY, true);
@@ -510,15 +511,12 @@ bool cbExampleCommand_triton(int argc, char** argv) {
     //    ctx->setConcreteMemoryAreaValue(modBase, buf, modSize);
     //    delete[] buf;
     //}
-
     //ListInfo modSecs;
     //Script::Module::GetMainModuleSectionList(&modSecs);
     //Script::Module::ModuleSectionInfo* sectionInfo(static_cast<Script::Module::ModuleSectionInfo*>(modSecs.data));
     //for (int i = 0; i < modSecs.count; i++) {
-
     //    uint8_t* buf = new uint8_t[sectionInfo[i].size]();
     //    duint readsize = 0;
-
     //    if ((!Script::Memory::Read(sectionInfo[i].addr, buf, sectionInfo[i].size, &readsize)) || (readsize != sectionInfo[i].size)) {
     //        dprintf("Script::Memory::Read() failed!!!\n");
     //        delete[] buf;
@@ -557,24 +555,6 @@ bool cbExampleCommand_triton(int argc, char** argv) {
     write_triton_reg_withdbg(ctx->registers.x86_r13, Script::Register::R13);
     write_triton_reg_withdbg(ctx->registers.x86_r14, Script::Register::R14);
     write_triton_reg_withdbg(ctx->registers.x86_r15, Script::Register::R15);
-    
-    dprintf("rax: %llX\n", (uint64_t)ctx->getConcreteRegisterValue(ctx->registers.x86_rax));
-    dprintf("rbx: %llX\n", (uint64_t)ctx->getConcreteRegisterValue(ctx->registers.x86_rbx));
-    dprintf("rcx: %llX\n", (uint64_t)ctx->getConcreteRegisterValue(ctx->registers.x86_rcx));
-    dprintf("rdx: %llX\n", (uint64_t)ctx->getConcreteRegisterValue(ctx->registers.x86_rdx));
-    dprintf("rsp: %llX\n", (uint64_t)ctx->getConcreteRegisterValue(ctx->registers.x86_rsp));
-    dprintf("rbp: %llX\n", (uint64_t)ctx->getConcreteRegisterValue(ctx->registers.x86_rbp));
-    dprintf("rsi: %llX\n", (uint64_t)ctx->getConcreteRegisterValue(ctx->registers.x86_rsi));
-    dprintf("rdi: %llX\n", (uint64_t)ctx->getConcreteRegisterValue(ctx->registers.x86_rdi));
-    dprintf("rip: %llX\n", (uint64_t)ctx->getConcreteRegisterValue(ctx->registers.x86_rip));
-    dprintf("r8: %llX\n", (uint64_t)ctx->getConcreteRegisterValue(ctx->registers.x86_r8));
-    dprintf("r9: %llX\n", (uint64_t)ctx->getConcreteRegisterValue(ctx->registers.x86_r9));
-    dprintf("r10: %llX\n", (uint64_t)ctx->getConcreteRegisterValue(ctx->registers.x86_r10));
-    dprintf("r11: %llX\n", (uint64_t)ctx->getConcreteRegisterValue(ctx->registers.x86_r11));
-    dprintf("r12: %llX\n", (uint64_t)ctx->getConcreteRegisterValue(ctx->registers.x86_r12));
-    dprintf("r13: %llX\n", (uint64_t)ctx->getConcreteRegisterValue(ctx->registers.x86_r13));
-    dprintf("r14: %llX\n", (uint64_t)ctx->getConcreteRegisterValue(ctx->registers.x86_r14));
-    dprintf("r15: %llX\n", (uint64_t)ctx->getConcreteRegisterValue(ctx->registers.x86_r15));
 
     ctx->setConcreteRegisterValue(ctx->registers.x86_cs, regs.regcontext.cs);
     ctx->setConcreteRegisterValue(ctx->registers.x86_ds, regs.regcontext.ds);
@@ -604,12 +584,71 @@ bool cbExampleCommand_triton(int argc, char** argv) {
     ctx->setConcreteMemoryAreaValue(stack_begin, buf, stack_size_align);
     delete[] buf;
 
-    //while () {
-    //    uint64_t rip = (uint64_t)ctx->getConcreteRegisterValue(ctx->registers.x86_rip);
-    //    ctx->processing();
-    //}
-    
+    SELECTIONDATA sel;
+    GuiSelectionGet(GUI_DISASSEMBLY, &sel);
+    dprintf("Seting Until Address: %llX\n", sel.start);
 
+    while (true) {
+        Instruction inst;
+        uint64_t rip = (uint64_t)ctx->getConcreteRegisterValue(ctx->registers.x86_rip);
+        if (rip == sel.start) {
+            break;
+        }
+        uint8_t codebuf[16]{};
+        duint readsize = 0;
+        Script::Memory::Read(rip, codebuf, 16, &readsize);
+        inst.setOpcode(codebuf, readsize);
+        ctx->processing(inst);
+    }
+
+    {
+        dprintf("-------------------------------------------\n");
+        dprintf("Registers:\n");
+
+        dprintf("rax: %llX\n", (uint64_t)ctx->getConcreteRegisterValue(ctx->registers.x86_rax));
+        dprintf("rbx: %llX\n", (uint64_t)ctx->getConcreteRegisterValue(ctx->registers.x86_rbx));
+        dprintf("rcx: %llX\n", (uint64_t)ctx->getConcreteRegisterValue(ctx->registers.x86_rcx));
+        dprintf("rdx: %llX\n", (uint64_t)ctx->getConcreteRegisterValue(ctx->registers.x86_rdx));
+        dprintf("rsp: %llX\n", (uint64_t)ctx->getConcreteRegisterValue(ctx->registers.x86_rsp));
+        dprintf("rbp: %llX\n", (uint64_t)ctx->getConcreteRegisterValue(ctx->registers.x86_rbp));
+        dprintf("rsi: %llX\n", (uint64_t)ctx->getConcreteRegisterValue(ctx->registers.x86_rsi));
+        dprintf("rdi: %llX\n", (uint64_t)ctx->getConcreteRegisterValue(ctx->registers.x86_rdi));
+        dprintf("\n");
+        dprintf("r8: %llX\n", (uint64_t)ctx->getConcreteRegisterValue(ctx->registers.x86_r8));
+        dprintf("r9: %llX\n", (uint64_t)ctx->getConcreteRegisterValue(ctx->registers.x86_r9));
+        dprintf("r10: %llX\n", (uint64_t)ctx->getConcreteRegisterValue(ctx->registers.x86_r10));
+        dprintf("r11: %llX\n", (uint64_t)ctx->getConcreteRegisterValue(ctx->registers.x86_r11));
+        dprintf("r12: %llX\n", (uint64_t)ctx->getConcreteRegisterValue(ctx->registers.x86_r12));
+        dprintf("r13: %llX\n", (uint64_t)ctx->getConcreteRegisterValue(ctx->registers.x86_r13));
+        dprintf("r14: %llX\n", (uint64_t)ctx->getConcreteRegisterValue(ctx->registers.x86_r14));
+        dprintf("r15: %llX\n", (uint64_t)ctx->getConcreteRegisterValue(ctx->registers.x86_r15));
+        dprintf("\n");
+        dprintf("rip: %llX\n", (uint64_t)ctx->getConcreteRegisterValue(ctx->registers.x86_rip));
+        dprintf("\n");
+        dprintf("rflags: %llX\n", (uint64_t)ctx->getConcreteRegisterValue(ctx->registers.x86_eflags));
+        dprintf("\n");
+        dprintf("Stack:  ('--->' is RSP)\n"); // 18个条目
+        uint64_t rsp = (uint64_t)ctx->getConcreteRegisterValue(ctx->registers.x86_rsp);
+        for (uint64_t i = 0; i < 22; i++) { // 4个上部 18个下部
+            uint64_t curRsp = (rsp - (4 * 8)) + (i * 8);
+            uint64_t curRsp_data = 0;
+            auto vec = ctx->getConcreteMemoryAreaValue(curRsp, sizeof(uint64_t));
+            for (size_t i2 = 0; i2 < vec.size(); i2++) { // 解析vec
+                curRsp_data &= i2 << (4 * i2);
+            }
+            if (curRsp == rsp) {
+                dprintf(" --->| %llX: \t%llX\n", curRsp, curRsp_data);
+            }
+            else {
+                dprintf("     | %llX: \t%llX\n", curRsp, curRsp_data);
+            }
+
+        }
+
+        dprintf("-------------------------------------------\n");
+    }
+    ctx->clearArchitecture(); // 释放内存
+    delete ctx;
     return true;
 }
 
